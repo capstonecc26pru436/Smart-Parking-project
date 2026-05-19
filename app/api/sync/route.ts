@@ -1,4 +1,4 @@
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { sql, setupDatabase } from "@/lib/db";
 import { prisma } from "@/lib/prisma";
@@ -13,25 +13,25 @@ export async function GET() {
     }
 
     const config = await sql`SELECT * FROM config LIMIT 1`;
-    let slots = await prisma.slots.findMany({ orderBy: { id: 'asc' }});
-    
-    // Seed initial slots manually if empty 
+    let slots = await prisma.slots.findMany({ orderBy: { id: "asc" } });
+
+    // Seed initial slots manually if empty
     if (slots.length === 0) {
-       const initialSlots = [];
-       for (let floor = 1; floor <= 3; floor++) {
-          for (let num = 1; num <= 8; num++) {
-             const id = `F${floor}-${num.toString().padStart(2, '0')}`;
-             initialSlots.push({
-                id: id,
-                nama_slot: `Lantai ${floor} - Slot ${num}`,
-                status: 'kosong'
-             });
-          }
-       }
-       await prisma.slots.createMany({ data: initialSlots });
-       slots = await prisma.slots.findMany({ orderBy: { id: 'asc' }});
+      const initialSlots = [];
+      for (let floor = 1; floor <= 3; floor++) {
+        for (let num = 1; num <= 8; num++) {
+          const id = `F${floor}-${num.toString().padStart(2, "0")}`;
+          initialSlots.push({
+            id: id,
+            nama_slot: `Lantai ${floor} - Slot ${num}`,
+            status: "kosong",
+          });
+        }
+      }
+      await prisma.slots.createMany({ data: initialSlots });
+      slots = await prisma.slots.findMany({ orderBy: { id: "asc" } });
     }
-    
+
     const activeVehicles = await sql`SELECT * FROM active_vehicles`;
     const logs = await sql`SELECT * FROM logs ORDER BY timestamp DESC LIMIT 50`;
 
@@ -82,40 +82,40 @@ export async function POST(req: NextRequest) {
       await sql`UPDATE config SET harga_per_jam = ${payload.harga_per_jam}, demo_mode = ${payload.demo_mode}`;
     } else if (action === "vehicle_in") {
       const { ticketId, slotId, checkInTime, logId } = payload;
-      
+
       // Update Prisma slot
       await prisma.slots.update({
         where: { id: slotId },
-        data: { status: 'terisi' }
+        data: { status: "terisi" },
       });
       // Insert Prisma ticket
       await prisma.tickets.create({
         data: {
           id_tiket: ticketId,
           id_slot: slotId,
-          waktu_masuk: new Date(checkInTime)
-        }
+          waktu_masuk: new Date(checkInTime),
+        },
       });
-      
+
       // Keep legacy SQL sync logic for completeness
       await sql`UPDATE slots SET status = 'terisi' WHERE id = ${slotId}`;
       await sql`INSERT INTO active_vehicles (ticket_id, slot_id, check_in_time) VALUES (${ticketId}, ${slotId}, ${checkInTime})`;
       await sql`INSERT INTO logs (id, type, timestamp) VALUES (${logId}, 'in', ${checkInTime})`;
     } else if (action === "vehicle_out") {
       const { ticketId, slotId, logId, timestamp } = payload;
-      
+
       // Update Prisma slot
       await prisma.slots.update({
         where: { id: slotId },
-        data: { status: 'kosong' }
+        data: { status: "kosong" },
       });
       // Update Prisma ticket
       await prisma.tickets.updateMany({
         where: { id_tiket: ticketId },
         data: {
           waktu_keluar: new Date(timestamp),
-          total_bayar: 5000 // mock price for now
-        }
+          total_bayar: 5000, // mock price for now
+        },
       });
 
       // Keep legacy SQL sync logic

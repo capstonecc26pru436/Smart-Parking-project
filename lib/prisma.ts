@@ -11,14 +11,16 @@ let prismaClient: PrismaClient;
 if (globalForPrisma.prisma) {
   prismaClient = globalForPrisma.prisma;
 } else if (connectionString) {
-  const pool = new Pool({ 
+  const pool = new Pool({
     connectionString,
-    ssl: { rejectUnauthorized: false } // NeonDB requires SSL
+    ssl: { rejectUnauthorized: false }, // NeonDB requires SSL
   });
   const adapter = new PrismaPg(pool);
   prismaClient = new PrismaClient({ adapter });
 } else {
   // Fallback for build time if DATABASE_URL is not provided
+  process.env.DATABASE_URL =
+    process.env.DATABASE_URL || "postgresql://dummy:dummy@localhost/dummy";
   prismaClient = new PrismaClient();
 }
 
