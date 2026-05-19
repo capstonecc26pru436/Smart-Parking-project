@@ -11,7 +11,10 @@ let prismaClient: PrismaClient;
 if (globalForPrisma.prisma) {
   prismaClient = globalForPrisma.prisma;
 } else {
-  const pool = new Pool({ connectionString });
+  const pool = new Pool({ 
+    connectionString,
+    ssl: { rejectUnauthorized: false } // NeonDB requires SSL
+  });
   const adapter = new PrismaPg(pool);
   prismaClient = new PrismaClient({ adapter });
 }

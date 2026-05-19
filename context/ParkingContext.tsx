@@ -157,6 +157,10 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
       if (isSlowInternet) return;
       try {
         const res = await fetch("/api/slots");
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`HTTP error! status: ${res.status}, body: ${text}`);
+        }
         const data = await res.json();
 
         if (data.slots) {
