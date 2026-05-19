@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-const connectionString = `${process.env.DATABASE_URL}`;
+const connectionString = process.env.DATABASE_URL;
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
@@ -10,13 +10,16 @@ let prismaClient: PrismaClient;
 
 if (globalForPrisma.prisma) {
   prismaClient = globalForPrisma.prisma;
-} else {
+} else if (connectionString) {
   const pool = new Pool({ 
     connectionString,
     ssl: { rejectUnauthorized: false } // NeonDB requires SSL
   });
   const adapter = new PrismaPg(pool);
   prismaClient = new PrismaClient({ adapter });
+} else {
+  // Fallback for build time if DATABASE_URL is not provided
+  prismaClient = new PrismaClient();
 }
 
 export const prisma = prismaClient;

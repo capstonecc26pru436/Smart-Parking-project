@@ -1,12 +1,15 @@
 import { neon } from "@neondatabase/serverless";
 
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL is not defined in environment variables");
-}
-
-export const sql = neon(process.env.DATABASE_URL);
+export const sql = process.env.DATABASE_URL 
+  ? neon(process.env.DATABASE_URL) 
+  : (() => {
+      // Return a dummy function for build time when DATABASE_URL is undefined
+      return (...args: any[]) => Promise.resolve([] as any);
+    })() as any;
 
 export async function setupDatabase() {
+  if (!process.env.DATABASE_URL) return; // Skip if no DB
+
   await sql`
     CREATE TABLE IF NOT EXISTS config (
       id SERIAL PRIMARY KEY,
