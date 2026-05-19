@@ -1,26 +1,33 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  ReactNode,
+  useEffect,
+  useRef,
+} from "react";
 
 // ==========================================
 // 1. Tipe Data (Types) & Interfaces
 // ==========================================
 
 export interface Config {
-  harga_per_jam: number;       // Harga parkir per jam (Integer)
-  demo_mode: boolean;          // Menandakan apakah sistem dalam mode demo (Boolean)
+  harga_per_jam: number; // Harga parkir per jam (Integer)
+  demo_mode: boolean; // Menandakan apakah sistem dalam mode demo (Boolean)
 }
 
 export interface Slot {
-  id: string;                  // Contoh: 'A01', 'A02'
-  status: 'kosong' | 'terisi'; // Status slot saat ini
-  location: string;            // Contoh: 'Blok A'
+  id: string; // Contoh: 'A01', 'A02'
+  status: "kosong" | "terisi"; // Status slot saat ini
+  location: string; // Contoh: 'Blok A'
 }
 
 export interface ActiveVehicle {
-  ticketId: string;            // Contoh: 'TIX-001'
-  slotId: string;              // Contoh: 'A01'
-  checkInTime: number;         // Timestamp ketika kendaraan masuk
+  ticketId: string; // Contoh: 'TIX-001'
+  slotId: string; // Contoh: 'A01'
+  checkInTime: number; // Timestamp ketika kendaraan masuk
 }
 
 export interface ExitProcessData {
@@ -31,7 +38,7 @@ export interface ExitProcessData {
 
 export interface LogEntry {
   id: string;
-  type: 'in' | 'out';
+  type: "in" | "out";
   timestamp: number;
 }
 
@@ -43,11 +50,18 @@ interface ParkingContextType {
   activeVehicles: ActiveVehicle[];
   setActiveVehicles: React.Dispatch<React.SetStateAction<ActiveVehicle[]>>;
   exitProcessData: ExitProcessData | null;
-  setExitProcessData: React.Dispatch<React.SetStateAction<ExitProcessData | null>>;
+  setExitProcessData: React.Dispatch<
+    React.SetStateAction<ExitProcessData | null>
+  >;
   paymentSuccess: boolean;
   setPaymentSuccess: React.Dispatch<React.SetStateAction<boolean>>;
   logs: LogEntry[];
   setLogs: React.Dispatch<React.SetStateAction<LogEntry[]>>;
+  isManualClose: boolean;
+  setIsManualClose: React.Dispatch<React.SetStateAction<boolean>>;
+  isSlowInternet: boolean;
+  lastSyncTime: number | null;
+  syncToDB: (action: string, payload: any) => Promise<void>;
 }
 
 // ==========================================
@@ -57,13 +71,13 @@ interface ParkingContextType {
 // Membuat Array berisi 24 slot parkir (12 di Blok A, 12 di Blok B)
 const defaultSlots: Slot[] = Array.from({ length: 24 }, (_, i) => {
   const isBlockA = i < 12;
-  const block = isBlockA ? 'A' : 'B';
+  const block = isBlockA ? "A" : "B";
   const num = (i % 12) + 1;
-  const id = `${block}${num.toString().padStart(2, '0')}`;
-  
+  const id = `${block}${num.toString().padStart(2, "0")}`;
+
   return {
     id,
-    status: 'kosong',
+    status: "kosong",
     location: `Blok ${block}`,
   };
 });
@@ -82,7 +96,7 @@ const ParkingContext = createContext<ParkingContextType | undefined>(undefined);
 export function ParkingProvider({ children }: { children: ReactNode }) {
   // State untuk Config
   const [config, setConfig] = useState<Config>({
-    harga_per_jam: 5000, 
+    harga_per_jam: 5000,
     demo_mode: false,
   });
 
@@ -93,11 +107,91 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
   const [activeVehicles, setActiveVehicles] = useState<ActiveVehicle[]>([]);
 
   // State untuk Layar Pintu Keluar
-  const [exitProcessData, setExitProcessData] = useState<ExitProcessData | null>(null);
+  const [exitProcessData, setExitProcessData] =
+    useState<ExitProcessData | null>(null);
   const [paymentSuccess, setPaymentSuccess] = useState<boolean>(false);
 
   // State untuk Log Keluar/Masuk
   const [logs, setLogs] = useState<LogEntry[]>([]);
+
+  // State untuk Fitur Baru (Slow Internet & Manual Close)
+  const [isManualClose, setIsManualClose] = useState<boolean>(false);
+  const [isSlowInternet, setIsSlowInternet] = useState<boolean>(false);
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
+
+  // Fungsi utilitas untuk sinkronisasi DB (tanpa memblokir UI)
+  const syncToDB = async (action: string, payload: any) => {
+    try {
+      await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, payload }),
+      });
+    } catch (e) {
+      console.error("DB Sync failed:", e);
+    }
+  };
+
+  // Ambil initial data dari DB (Client-side mount)
+  useEffect(() => {
+    const fetchDB = async () => {
+      try {
+        const res = await fetch("/api/sync");
+        const data = await res.json();
+
+        if (data.config) setConfig(data.config);
+        if (data.slots && data.slots.length > 0) setSlots(data.slots);
+        if (data.activeVehicles) setActiveVehicles(data.activeVehicles);
+        if (data.logs) setLogs(data.logs);
+      } catch (e) {
+        console.error("Failed to fetch initial data:", e);
+      }
+    };
+    fetchDB();
+  }, []);
+
+  // Polling Real-time data slot database via Prisma
+  useEffect(() => {
+    const fetchSlots = async () => {
+      // Jika mode internet lambat aktif, tunda fetching (simulasi)
+      if (isSlowInternet) return;
+      try {
+        const res = await fetch("/api/slots");
+        const data = await res.json();
+
+        if (data.slots) {
+          setSlots(
+            data.slots.map((s: any) => ({
+              id: s.id,
+              status: s.status,
+              location: `Blok ${s.id.startsWith("A") || s.id.startsWith("F1") ? "A" : "B"}`,
+            })),
+          );
+        }
+      } catch (e) {
+        console.error("Failed to sync realtime slots:", e);
+      }
+    };
+
+    // Poll DB every 3 seconds for near-real-time updates
+    const intervalId = setInterval(fetchSlots, 3000);
+    return () => clearInterval(intervalId);
+  }, [isSlowInternet]);
+
+  // Efek Simulasi Internet Lemot
+  useEffect(() => {
+    const latensiInterval = setInterval(() => {
+      const isSlow = Math.random() > 0.7; // 30% chance internet lambat
+      setIsSlowInternet(isSlow);
+      if (isSlow) {
+        setLastSyncTime(Date.now() - Math.floor(Math.random() * 5 * 60 * 1000)); // last sync 0-5 mins ago
+      } else {
+        setLastSyncTime(Date.now());
+      }
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(latensiInterval);
+  }, []);
 
   // Ref untuk menghindari stale closure di dalam setInterval Demo Mode
   const stateRef = useRef({ slots, activeVehicles, exitProcessData, config });
@@ -110,32 +204,60 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
     if (!config.demo_mode) return;
 
     const demoInterval = setInterval(() => {
-      const { slots: currentSlots, activeVehicles: currentVehicles, exitProcessData: currentExitData, config: currentConfig } = stateRef.current;
-      
+      const {
+        slots: currentSlots,
+        activeVehicles: currentVehicles,
+        exitProcessData: currentExitData,
+        config: currentConfig,
+      } = stateRef.current;
+
       // Jangan simulasikan kalau ada kendaraan yg sedang checkout
       if (currentExitData) return;
 
       const isEntering = Math.random() > 0.4;
-      const availableSlots = currentSlots.filter(s => s.status === 'kosong');
+      const availableSlots = currentSlots.filter((s) => s.status === "kosong");
 
       if (isEntering && availableSlots.length > 0) {
         // [SIMULASI] Kendaraan Masuk
-        const randomSlot = availableSlots[Math.floor(Math.random() * availableSlots.length)];
-        const newTicketId = `DEMO-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+        const randomSlot =
+          availableSlots[Math.floor(Math.random() * availableSlots.length)];
+        const newTicketId = `DEMO-${Math.floor(Math.random() * 1000)
+          .toString()
+          .padStart(3, "0")}`;
         const newTime = Date.now();
-        setActiveVehicles(prev => [...prev, {
+        const checkInTime =
+          newTime - Math.floor(Math.random() * 3 * 3600 * 1000);
+        setActiveVehicles((prev) => [
+          ...prev,
+          {
+            ticketId: newTicketId,
+            slotId: randomSlot.id,
+            // Buat agar durasi masuk sudah beberapa jam lalu supaya ada tagihan
+            checkInTime,
+          },
+        ]);
+        setSlots((prev) =>
+          prev.map((s) =>
+            s.id === randomSlot.id ? { ...s, status: "terisi" } : s,
+          ),
+        );
+        setLogs((prev) => [
+          ...prev,
+          { id: newTime.toString(), type: "in", timestamp: newTime },
+        ]);
+
+        syncToDB("vehicle_in", {
           ticketId: newTicketId,
           slotId: randomSlot.id,
-          // Buat agar durasi masuk sudah beberapa jam lalu supaya ada tagihan
-          checkInTime: newTime - Math.floor(Math.random() * 3 * 3600 * 1000) 
-        }]);
-        setSlots(prev => prev.map(s => s.id === randomSlot.id ? { ...s, status: 'terisi' } : s));
-        setLogs(prev => [...prev, { id: newTime.toString(), type: 'in', timestamp: newTime }]);
+          checkInTime,
+          logId: newTime.toString(),
+        });
       } else if (!isEntering && currentVehicles.length > 0) {
         // [SIMULASI] Kendaraan Keluar
-        const vehicle = currentVehicles[Math.floor(Math.random() * currentVehicles.length)];
+        const vehicle =
+          currentVehicles[Math.floor(Math.random() * currentVehicles.length)];
         const checkoutTime = Date.now();
-        
+
         const durationMs = checkoutTime - vehicle.checkInTime;
         const durationMinutes = Math.floor(durationMs / (1000 * 60));
         const hours = Math.floor(durationMinutes / 60);
@@ -149,7 +271,7 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
         setExitProcessData({
           ticketId: vehicle.ticketId,
           durationString,
-          totalCost
+          totalCost,
         });
 
         // Delay sedikit sebelum bayar
@@ -158,11 +280,28 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
 
           // Delay hapus data (kendaraan resmi keluar)
           setTimeout(() => {
-            setSlots(prev => prev.map(s => s.id === vehicle.slotId ? { ...s, status: 'kosong' } : s));
-            setActiveVehicles(prev => prev.filter(v => v.ticketId !== vehicle.ticketId));
+            const exitTime = Date.now();
+            setSlots((prev) =>
+              prev.map((s) =>
+                s.id === vehicle.slotId ? { ...s, status: "kosong" } : s,
+              ),
+            );
+            setActiveVehicles((prev) =>
+              prev.filter((v) => v.ticketId !== vehicle.ticketId),
+            );
             setExitProcessData(null);
             setPaymentSuccess(false);
-            setLogs(prev => [...prev, { id: Date.now().toString(), type: 'out', timestamp: Date.now() }]);
+            setLogs((prev) => [
+              ...prev,
+              { id: exitTime.toString(), type: "out", timestamp: exitTime },
+            ]);
+
+            syncToDB("vehicle_out", {
+              ticketId: vehicle.ticketId,
+              slotId: vehicle.slotId,
+              logId: exitTime.toString(),
+              timestamp: exitTime,
+            });
           }, 3000);
         }, 2000);
       }
@@ -172,20 +311,25 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
   }, [config.demo_mode]);
 
   return (
-    <ParkingContext.Provider 
-      value={{ 
-        config, 
-        setConfig, 
-        slots, 
-        setSlots, 
-        activeVehicles, 
+    <ParkingContext.Provider
+      value={{
+        config,
+        setConfig,
+        slots,
+        setSlots,
+        activeVehicles,
         setActiveVehicles,
         exitProcessData,
         setExitProcessData,
         paymentSuccess,
         setPaymentSuccess,
         logs,
-        setLogs
+        setLogs,
+        isManualClose,
+        setIsManualClose,
+        isSlowInternet,
+        lastSyncTime,
+        syncToDB,
       }}
     >
       {children}
@@ -198,13 +342,13 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
 // ==========================================
 
 /**
- * Hook `useParking` digunakan di dalam komponen-komponen React untuk 
+ * Hook `useParking` digunakan di dalam komponen-komponen React untuk
  * membaca dan memodifikasi global state secara mudah.
  */
 export function useParking() {
   const context = useContext(ParkingContext);
   if (context === undefined) {
-    throw new Error('useParking harus digunakan di dalam ParkingProvider');
+    throw new Error("useParking harus digunakan di dalam ParkingProvider");
   }
   return context;
 }

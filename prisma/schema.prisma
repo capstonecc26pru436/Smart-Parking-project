@@ -1,0 +1,31 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model slots {
+  id        String    @id
+  nama_slot String
+  status    String
+  
+  tickets   tickets[]
+}
+
+model tickets {
+  id_tiket     String    @id
+  id_slot      String
+  waktu_masuk  DateTime
+  waktu_keluar DateTime?
+  total_bayar  Int?
+
+  slot         slots     @relation(fields: [id_slot], references: [id])
+}
+

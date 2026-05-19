@@ -6,7 +6,13 @@ import { useParking } from '@/context/ParkingContext';
 
 export default function LandingPage() {
   const router = useRouter();
-  const { config, setConfig } = useParking();
+  const { config, setConfig, syncToDB } = useParking();
+
+  const handleConfigUpdate = async (demo_mode: boolean) => {
+    const newConfig = { ...config, demo_mode };
+    setConfig(newConfig);
+    await syncToDB('update_config', newConfig);
+  };
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
@@ -45,13 +51,13 @@ export default function LandingPage() {
         {/* Mode Selector */}
         <div className="flex bg-slate-100 rounded-xl p-1 mb-8 w-full border border-slate-200 shadow-inner">
           <button 
-            onClick={() => setConfig({ ...config, demo_mode: false })}
+            onClick={() => handleConfigUpdate(false)}
             className={`flex-1 py-3 px-4 rounded-lg text-sm font-semibold transition-all duration-200 ${!config.demo_mode ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
             Real Mode
           </button>
           <button 
-            onClick={() => setConfig({ ...config, demo_mode: true })}
+            onClick={() => handleConfigUpdate(true)}
             className={`flex-1 py-3 px-4 rounded-lg text-sm font-semibold transition-all duration-200 ${config.demo_mode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
             Demo Mode
