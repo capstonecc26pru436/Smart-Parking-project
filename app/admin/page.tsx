@@ -100,7 +100,7 @@ export default function DashboardPage() {
   const recentOut = recentLogs.filter(log => log.type === 'out').length;
 
   // Fungsi Simulasi Kendaraan Masuk
-  const simulateCheckIn = () => {
+  const simulateCheckIn = async () => {
     // Cari slot yang masih kosong
     const emptySlotIndex = slots.findIndex((s) => s.status === 'kosong');
     if (emptySlotIndex === -1) {
@@ -114,23 +114,7 @@ export default function DashboardPage() {
     const checkInTime = Date.now() - Math.floor(Math.random() * 5 * 3600 * 1000);
     const logId = Date.now().toString();
     
-    // 1. Update State Kendaraan Aktif
-    setActiveVehicles((prev) => [
-      ...prev,
-      {
-        ticketId: newTicketId,
-        slotId: slot.id,
-        checkInTime: checkInTime,
-      },
-    ]);
-
-    // 2. Update Status Slot Menjadi "terisi"
-    const updatedSlots = [...slots];
-    updatedSlots[emptySlotIndex] = { ...slot, status: 'terisi' };
-    setSlots(updatedSlots);
-    setLogs(prev => [...prev, { id: logId, type: 'in', timestamp: Date.now() }]);
-    
-    syncToDB('vehicle_in', { ticketId: newTicketId, slotId: slot.id, checkInTime, logId });
+    await syncToDB('vehicle_in', { ticketId: newTicketId, slotId: slot.id, checkInTime, logId });
   };
 
   const handleInitiateCheckout = (ticketId: string) => {
@@ -169,17 +153,7 @@ export default function DashboardPage() {
     
     const vehicle = activeVehicles.find(v => v.ticketId === selectedVehicle);
     
-    setTimeout(() => {
-      // 1. Release the slot
-      if (vehicle) {
-        setSlots(prev => prev.map(slot => 
-          slot.id === vehicle.slotId ? { ...slot, status: 'kosong' } : slot
-        ));
-      }
-      
-      // 2. Remove from active vehicles
-      setActiveVehicles(prev => prev.filter(v => v.ticketId !== selectedVehicle));
-      
+    setTimeout(async () => {
       // 3. Clear exit display
       setExitProcessData(null);
       setPaymentSuccess(false);
@@ -187,8 +161,7 @@ export default function DashboardPage() {
       
       if (vehicle) {
         const exitTime = Date.now();
-        setLogs(prev => [...prev, { id: exitTime.toString(), type: 'out', timestamp: exitTime }]);
-        syncToDB('vehicle_out', { ticketId: vehicle.ticketId, slotId: vehicle.slotId, logId: exitTime.toString(), timestamp: exitTime });
+        await syncToDB('vehicle_out', { ticketId: vehicle.ticketId, slotId: vehicle.slotId, logId: exitTime.toString(), timestamp: exitTime });
       }
     }, 4000);
   };
@@ -222,25 +195,31 @@ export default function DashboardPage() {
         </div>
 
         {/* Sidebar Nav (Newly Requested) */}
-        <nav className="mb-6 space-y-2">
-          <div 
+        <nav className="mb-8 space-y-1">
+          <button 
+            type="button"
             onClick={() => setActiveTab('dashboard')}
-            className={`p-3 font-medium cursor-pointer rounded-r-lg transition-colors ${activeTab === 'dashboard' ? 'bg-blue-600/20 border-l-4 border-blue-500 text-blue-400' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+            className={`w-full text-left px-4 py-3 font-medium cursor-pointer rounded-xl transition-all duration-200 flex items-center gap-3 ${activeTab === 'dashboard' ? 'bg-blue-600 shadow-md shadow-blue-500/20 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}
           >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
             Dashboard Overview
-          </div>
-          <div 
+          </button>
+          <button 
+            type="button"
             onClick={() => setActiveTab('laporan')}
-            className={`p-3 font-medium cursor-pointer rounded-r-lg transition-colors ${activeTab === 'laporan' ? 'bg-blue-600/20 border-l-4 border-blue-500 text-blue-400' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+            className={`w-full text-left px-4 py-3 font-medium cursor-pointer rounded-xl transition-all duration-200 flex items-center gap-3 ${activeTab === 'laporan' ? 'bg-blue-600 shadow-md shadow-blue-500/20 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}
           >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
             Laporan &amp; Ekspor Data
-          </div>
-          <div 
+          </button>
+          <button 
+            type="button"
             onClick={() => setActiveTab('petugas')}
-            className={`p-3 font-medium cursor-pointer rounded-r-lg transition-colors ${activeTab === 'petugas' ? 'bg-blue-600/20 border-l-4 border-blue-500 text-blue-400' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+            className={`w-full text-left px-4 py-3 font-medium cursor-pointer rounded-xl transition-all duration-200 flex items-center gap-3 ${activeTab === 'petugas' ? 'bg-blue-600 shadow-md shadow-blue-500/20 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}
           >
-            Ngatur Petugas
-          </div>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            Manage Petugas
+          </button>
         </nav>
 
         <div className="bg-slate-800/50 rounded-xl p-5 mb-6 border border-slate-700/50">
