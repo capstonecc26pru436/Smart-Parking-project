@@ -122,7 +122,7 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
   // Mengambil state secara global dari Context (Initial data)
   const fetchFullDB = async () => {
     try {
-      const res = await fetch("/api/sync");
+      const res = await fetch(`/api/sync?t=${Date.now()}`, { cache: 'no-store' });
       const data = await res.json();
 
       if (data.config) setConfig(data.config);
@@ -173,7 +173,7 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
       // Jika mode internet lambat aktif, tunda fetching (simulasi)
       if (isSlowInternet) return;
       try {
-        const res = await fetch("/api/sync");
+        const res = await fetch(`/api/sync?t=${Date.now()}`, { cache: 'no-store' });
         if (!res.ok) throw new Error("Gagal sync data");
         const data = await res.json();
 
@@ -194,8 +194,8 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // Poll DB every 3 seconds for near-real-time updates
-    const intervalId = setInterval(pollFullDB, 3000);
+    // Poll DB every 1.5 seconds for near-real-time updates
+    const intervalId = setInterval(pollFullDB, 1500);
     return () => clearInterval(intervalId);
   }, [isSlowInternet]);
 
