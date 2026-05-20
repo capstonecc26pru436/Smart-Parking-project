@@ -119,6 +119,37 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
   const [isSlowInternet, setIsSlowInternet] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
 
+  // Mengambil state secara global dari Context (Initial data)
+  const fetchFullDB = async () => {
+    try {
+      const res = await fetch("/api/sync");
+      const data = await res.json();
+
+      if (data.config) setConfig(data.config);
+      if (data.slots && data.slots.length > 0) setSlots(data.slots);
+      if (data.activeVehicles) setActiveVehicles(data.activeVehicles);
+      if (data.logs) setLogs(data.logs);
+    } catch (e) {
+      console.error("Failed to fetch full data:", e);
+    }
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchFullDB();
+  }, []);
+
+  // Broadcast channel untuk sinkronisasi antar-tab seketika
+  useEffect(() => {
+    const channel = new BroadcastChannel('parking_sync');
+    channel.onmessage = (event) => {
+      if (event.data === 'sync_needed') {
+        fetchFullDB();
+      }
+    };
+    return () => channel.close();
+  }, []);
+
   // Fungsi utilitas untuk sinkronisasi DB (tanpa memblokir UI)
   const syncToDB = async (action: string, payload: any) => {
     try {
@@ -127,58 +158,44 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, payload }),
       });
+      // Beritahu tab lain untuk sync state dari DB seketika itu juga
+      const channel = new BroadcastChannel('parking_sync');
+      channel.postMessage('sync_needed');
+      channel.close();
     } catch (e) {
       console.error("DB Sync failed:", e);
     }
   };
 
-  // Ambil initial data dari DB (Client-side mount)
+  // Polling Real-time data database via Prisma for cross-device sync
   useEffect(() => {
-    const fetchDB = async () => {
-      try {
-        const res = await fetch("/api/sync");
-        const data = await res.json();
-
-        if (data.config) setConfig(data.config);
-        if (data.slots && data.slots.length > 0) setSlots(data.slots);
-        if (data.activeVehicles) setActiveVehicles(data.activeVehicles);
-        if (data.logs) setLogs(data.logs);
-      } catch (e) {
-        console.error("Failed to fetch initial data:", e);
-      }
-    };
-    fetchDB();
-  }, []);
-
-  // Polling Real-time data slot database via Prisma
-  useEffect(() => {
-    const fetchSlots = async () => {
+    const pollFullDB = async () => {
       // Jika mode internet lambat aktif, tunda fetching (simulasi)
       if (isSlowInternet) return;
       try {
-        const res = await fetch("/api/slots");
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`HTTP error! status: ${res.status}, body: ${text}`);
-        }
+        const res = await fetch("/api/sync");
+        if (!res.ok) throw new Error("Gagal sync data");
         const data = await res.json();
 
-        if (data.slots) {
+        if (data.config) setConfig(data.config);
+        if (data.slots && data.slots.length > 0) {
           setSlots(
             data.slots.map((s: any) => ({
               id: s.id,
               status: s.status,
               location: `Blok ${s.id.startsWith("A") || s.id.startsWith("F1") ? "A" : "B"}`,
-            })),
+            }))
           );
         }
+        if (data.activeVehicles) setActiveVehicles(data.activeVehicles);
+        if (data.logs) setLogs(data.logs);
       } catch (e) {
         console.error("Failed to sync realtime slots:", e);
       }
     };
 
     // Poll DB every 3 seconds for near-real-time updates
-    const intervalId = setInterval(fetchSlots, 3000);
+    const intervalId = setInterval(pollFullDB, 3000);
     return () => clearInterval(intervalId);
   }, [isSlowInternet]);
 

@@ -201,9 +201,25 @@ export default function DashboardPage() {
           ==================================================== */}
       <section className="bg-slate-900 text-white w-full md:w-96 shrink-0 flex flex-col p-6 overflow-y-auto border-r border-slate-800 shadow-xl z-20">
         <h1 className="text-xl font-bold mb-1 tracking-tight">ParkSystem <span className="text-blue-400">Admin</span></h1>
-        <p className="text-slate-400 mb-6 text-xs font-semibold uppercase tracking-wider">
-          Global Config (Demo: {config.demo_mode ? 'ON' : 'OFF'})
-        </p>
+        <div className="flex items-center justify-between mb-6">
+          <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">
+            Global Config
+          </p>
+          <button
+            onClick={() => {
+              const newConfig = { ...config, demo_mode: !config.demo_mode };
+              setConfig(newConfig);
+              syncToDB("update_config", newConfig);
+            }}
+            className={`px-3 py-1 text-xs font-bold rounded-full transition-colors shadow-sm ${
+              config.demo_mode 
+                ? 'bg-amber-500 text-amber-950 hover:bg-amber-400' 
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+          >
+            {config.demo_mode ? 'DEMO IS ON' : 'DEMO IS OFF'}
+          </button>
+        </div>
 
         {/* Sidebar Nav (Newly Requested) */}
         <nav className="mb-6 space-y-2">

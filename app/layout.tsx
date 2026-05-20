@@ -1,6 +1,7 @@
 import type {Metadata} from 'next';
 import './globals.css'; // Global styles
 import { ParkingProvider } from '@/context/ParkingContext';
+import DemoBanner from '@/components/DemoBanner';
 
 export const metadata: Metadata = {
   title: 'Sistem Manajemen Parkir',
@@ -12,6 +13,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
     <html lang="en">
       <body suppressHydrationWarning>
         <ParkingProvider>
+          <DemoBanner />
           {children}
         </ParkingProvider>
       </body>
