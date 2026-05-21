@@ -8,6 +8,8 @@ import React, {
   useEffect,
   useRef,
 } from "react";
+import { collection, doc, onSnapshot, setDoc, updateDoc, writeBatch, deleteDoc, query, limit, orderBy, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 // ==========================================
 // 1. Tipe Data (Types) & Interfaces
@@ -118,85 +120,137 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
   const [isSlowInternet, setIsSlowInternet] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
 
-  // Mengambil state secara global dari Context (Initial data)
-  const fetchFullDB = async () => {
-    try {
-      const res = await fetch("/api/sync");
-      const data = await res.json();
-
-      if (data.config) setConfig(data.config);
-      if (data.slots && data.slots.length > 0) setSlots(data.slots);
-      if (data.activeVehicles) setActiveVehicles(data.activeVehicles);
-      if (data.logs) setLogs(data.logs);
-    } catch (e) {
-      console.error("Failed to fetch full data:", e);
-    }
-  };
-
+  // Setup initial Firestore data structure if empty
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchFullDB();
-  }, []);
+    const initDb = async () => {
+      const slotsSnap = await getDocs(collection(db, "slots"));
+      if (slotsSnap.empty) {
+        console.log("Initializing Firestore with default data...");
+        const batch = writeBatch(db);
+        
+        // slots
+        defaultSlots.forEach((s) => {
+          const ref = doc(collection(db, "slots"), s.id);
+          batch.set(ref, s);
+        });
 
-  // Broadcast channel untuk sinkronisasi antar-tab seketika
-  useEffect(() => {
-    const channel = new BroadcastChannel('parking_sync');
-    channel.onmessage = (event) => {
-      if (event.data === 'sync_needed') {
-        fetchFullDB();
+        // initial config
+        const confRef = doc(collection(db, "config"), "default");
+        batch.set(confRef, { harga_per_jam: 5000, demo_mode: false });
+
+        await batch.commit();
+        console.log("Firestore initialized.");
       }
     };
-    return () => channel.close();
+    initDb();
   }, []);
 
-  // Fungsi utilitas untuk sinkronisasi DB (tanpa memblokir UI)
+  // Realtime listeners via Firestore
+  useEffect(() => {
+    if (isSlowInternet) return; // Simulasi: stop listening saat isSlowInternet
+
+    // Listen to Config
+    const unsubConfig = onSnapshot(doc(db, "config", "default"), (docSnap) => {
+      setLastSyncTime(Date.now());
+      if (docSnap.exists()) {
+        setConfig(docSnap.data() as Config);
+      }
+    });
+
+    // Listen to Slots
+    const unsubSlots = onSnapshot(collection(db, "slots"), (snap) => {
+      setLastSyncTime(Date.now());
+      const newSlots: Slot[] = [];
+      snap.forEach((docSnap) => {
+        const d = docSnap.data();
+        newSlots.push({ id: d.id, status: d.status, location: d.location });
+      });
+      // sort slots to keep fixed order
+      newSlots.sort((a, b) => a.id.localeCompare(b.id));
+      if (newSlots.length > 0) setSlots(newSlots);
+    });
+
+    // Listen to Vehicles
+    const unsubVehicles = onSnapshot(collection(db, "activeVehicles"), (snap) => {
+      setLastSyncTime(Date.now());
+      const newVehicles: ActiveVehicle[] = [];
+      snap.forEach((docSnap) => {
+        newVehicles.push(docSnap.data() as ActiveVehicle);
+      });
+      setActiveVehicles(newVehicles);
+    });
+
+    // Listen to Logs
+    const qLogs = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(50));
+    const unsubLogs = onSnapshot(qLogs, (snap) => {
+      setLastSyncTime(Date.now());
+      const newLogs: LogEntry[] = [];
+      snap.forEach((docSnap) => {
+        newLogs.push(docSnap.data() as LogEntry);
+      });
+      setLogs(newLogs);
+    });
+
+    return () => {
+      unsubConfig();
+      unsubSlots();
+      unsubVehicles();
+      unsubLogs();
+    };
+  }, [isSlowInternet]);
+
+  // Sync to database
   const syncToDB = async (action: string, payload: any) => {
     try {
-      await fetch("/api/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, payload }),
-      });
-      // Beritahu tab lain untuk sync state dari DB seketika itu juga
-      const channel = new BroadcastChannel('parking_sync');
-      channel.postMessage('sync_needed');
-      channel.close();
+      if (action === "update_config") {
+        await updateDoc(doc(db, "config", "default"), {
+          harga_per_jam: payload.harga_per_jam,
+          demo_mode: payload.demo_mode,
+        });
+      } else if (action === "vehicle_in") {
+        const batch = writeBatch(db);
+        
+        // Slot
+        batch.update(doc(db, "slots", payload.slotId), { status: "terisi" });
+        
+        // activeVehicle
+        batch.set(doc(db, "activeVehicles", payload.ticketId), {
+          ticketId: payload.ticketId,
+          slotId: payload.slotId,
+          checkInTime: payload.checkInTime,
+        });
+
+        // Log
+        batch.set(doc(db, "logs", payload.logId), {
+          id: payload.logId,
+          type: "in",
+          timestamp: payload.checkInTime,
+        });
+
+        await batch.commit();
+
+      } else if (action === "vehicle_out") {
+        const batch = writeBatch(db);
+        
+        // Slot
+        batch.update(doc(db, "slots", payload.slotId), { status: "kosong" });
+        
+        // Remove activeVehicle
+        batch.delete(doc(db, "activeVehicles", payload.ticketId));
+
+        // Add Log
+        batch.set(doc(db, "logs", payload.logId), {
+          id: payload.logId,
+          type: "out",
+          timestamp: payload.timestamp,
+        });
+
+        await batch.commit();
+      }
     } catch (e) {
       console.error("DB Sync failed:", e);
     }
   };
-
-  // Polling Real-time data database via Prisma for cross-device sync
-  useEffect(() => {
-    const pollFullDB = async () => {
-      // Jika mode internet lambat aktif, tunda fetching (simulasi)
-      if (isSlowInternet) return;
-      try {
-        const res = await fetch("/api/sync");
-        if (!res.ok) throw new Error("Gagal sync data");
-        const data = await res.json();
-
-        if (data.config) setConfig(data.config);
-        if (data.slots && data.slots.length > 0) {
-          setSlots(
-            data.slots.map((s: any) => ({
-              id: s.id,
-              status: s.status,
-              location: `Blok ${s.id.startsWith("A") || s.id.startsWith("F1") ? "A" : "B"}`,
-            }))
-          );
-        }
-        if (data.activeVehicles) setActiveVehicles(data.activeVehicles);
-        if (data.logs) setLogs(data.logs);
-      } catch (e) {
-        console.error("Failed to sync realtime slots:", e);
-      }
-    };
-
-    // Poll DB every 3 seconds for near-real-time updates
-    const intervalId = setInterval(pollFullDB, 3000);
-    return () => clearInterval(intervalId);
-  }, [isSlowInternet]);
 
   // Efek Simulasi Internet Lemot
   useEffect(() => {
