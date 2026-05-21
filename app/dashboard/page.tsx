@@ -6,11 +6,10 @@ import { useParking } from '@/context/ParkingContext';
 export default function EntryGatePage() {
   const { slots, setSlots, setActiveVehicles, isManualClose, isSlowInternet, lastSyncTime, setLogs, syncToDB } = useParking();
   const [modalData, setModalData] = useState<{ ticketId: string; slotId: string } | null>(null);
-  const [loading, setLoading] = useState(false);
 
   const availableSlots = slots.filter((s) => s.status === 'kosong').length;
 
-  const handleAmbilTiket = async () => {
+  const handleAmbilTiket = () => {
     if (availableSlots === 0) {
       alert('Mohon maaf, lokasi parkir sedang penuh!');
       return;
@@ -19,21 +18,30 @@ export default function EntryGatePage() {
     const emptySlotIndex = slots.findIndex((s) => s.status === 'kosong');
     if (emptySlotIndex === -1) return;
 
-    setLoading(true);
-
     const slot = slots[emptySlotIndex];
     const newTicketId = `TIX-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
     const checkInTime = Date.now();
     const logId = Date.now().toString();
 
-    const success = await syncToDB('vehicle_in', { ticketId: newTicketId, slotId: slot.id, checkInTime, logId });
-    
-    setLoading(false);
+    // Update global state
+    setActiveVehicles((prev) => [
+      ...prev,
+      {
+        ticketId: newTicketId,
+        slotId: slot.id,
+        checkInTime: checkInTime,
+      },
+    ]);
 
-    if (success) {
-      // Show modal ONLY if DB update succeeded
-      setModalData({ ticketId: newTicketId, slotId: slot.id });
-    }
+    const updatedSlots = [...slots];
+    updatedSlots[emptySlotIndex] = { ...slot, status: 'terisi' };
+    setSlots(updatedSlots);
+    setLogs((prev: any) => [...prev, { id: logId, type: 'in', timestamp: Date.now() }]);
+    
+    syncToDB('vehicle_in', { ticketId: newTicketId, slotId: slot.id, checkInTime, logId });
+
+    // Show modal
+    setModalData({ ticketId: newTicketId, slotId: slot.id });
   };
 
   useEffect(() => {
@@ -98,23 +106,21 @@ export default function EntryGatePage() {
           
           <button
             onClick={handleAmbilTiket}
-            disabled={availableSlots === 0 || modalData !== null || isManualClose || loading}
+            disabled={availableSlots === 0 || modalData !== null || isManualClose}
             className={`
               relative z-10 w-64 h-64 md:w-80 md:h-80 rounded-full flex flex-col items-center justify-center 
               border-8 shadow-[inset_0_4px_20px_rgba(255,255,255,0.2),_0_10px_30px_rgba(0,0,0,0.8)]
               transition-all duration-200 
-              ${availableSlots > 0 && !modalData && !isManualClose && !loading
+              ${availableSlots > 0 && !modalData && !isManualClose
                 ? 'bg-gradient-to-br from-rose-500 to-rose-700 border-slate-900 hover:from-rose-400 hover:to-rose-600 active:scale-95 active:shadow-[inset_0_10px_30px_rgba(0,0,0,0.5)] cursor-pointer' 
                 : 'bg-slate-900 border-rose-900/50 cursor-not-allowed'
               }
             `}
           >
             <span className={`text-2xl md:text-3xl font-black uppercase tracking-widest text-center px-6 leading-relaxed flex flex-col items-center
-              ${availableSlots > 0 && !modalData && !isManualClose && !loading ? 'text-white' : 'text-rose-500'}
+              ${availableSlots > 0 && !modalData && !isManualClose ? 'text-white' : 'text-rose-500'}
             `}>
-              {loading ? (
-                'MEMPROSES...'
-              ) : isManualClose ? (
+              {isManualClose ? (
                 'AKSES DITUTUP ADMIN'
               ) : availableSlots === 0 ? (
                 'MAAF, PARKIRAN SEDANG PENUH'

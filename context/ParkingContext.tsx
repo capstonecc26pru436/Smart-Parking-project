@@ -61,7 +61,7 @@ interface ParkingContextType {
   setIsManualClose: React.Dispatch<React.SetStateAction<boolean>>;
   isSlowInternet: boolean;
   lastSyncTime: number | null;
-  syncToDB: (action: string, payload: any) => Promise<boolean>;
+  syncToDB: (action: string, payload: any) => Promise<void>;
 }
 
 // ==========================================
@@ -70,15 +70,14 @@ interface ParkingContextType {
 
 // Membuat Array berisi 24 slot parkir (12 di Blok A, 12 di Blok B)
 const defaultSlots: Slot[] = Array.from({ length: 24 }, (_, i) => {
-  const isBlockA = i < 12;
-  const block = isBlockA ? "A" : "B";
-  const num = (i % 12) + 1;
-  const id = `${block}${num.toString().padStart(2, "0")}`;
+  const floor = Math.floor(i / 8) + 1; // 1, 2, 3
+  const num = (i % 8) + 1; // 1 to 8
+  const id = `F${floor}-${num.toString().padStart(2, "0")}`;
 
   return {
     id,
     status: "kosong",
-    location: `Blok ${block}`,
+    location: `Blok ${id.startsWith("F1") ? "A" : "B"}`,
   };
 });
 
@@ -120,9 +119,9 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
   const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
 
   // Mengambil state secara global dari Context (Initial data)
-  const fetchFullDB = React.useCallback(async () => {
+  const fetchFullDB = async () => {
     try {
-      const res = await fetch(`/api/sync?t=${Date.now()}`, { cache: 'no-store' });
+      const res = await fetch("/api/sync");
       const data = await res.json();
 
       if (data.config) setConfig(data.config);
@@ -132,12 +131,12 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.error("Failed to fetch full data:", e);
     }
-  }, []);
+  };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchFullDB();
-  }, [fetchFullDB]);
+  }, []);
 
   // Broadcast channel untuk sinkronisasi antar-tab seketika
   useEffect(() => {
@@ -148,36 +147,24 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
       }
     };
     return () => channel.close();
-  }, [fetchFullDB]);
+  }, []);
 
   // Fungsi utilitas untuk sinkronisasi DB (tanpa memblokir UI)
-  const syncToDB = React.useCallback(async (action: string, payload: any) => {
+  const syncToDB = async (action: string, payload: any) => {
     try {
-      const response = await fetch("/api/sync", {
+      await fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, payload }),
       });
-      
-      if (!response.ok) {
-        throw new Error(`Sync failed with status: ${response.status}`);
-      }
-
-      // Langsung panggil fetchFullDB di klien saat ini
-      await fetchFullDB();
-
       // Beritahu tab lain untuk sync state dari DB seketika itu juga
       const channel = new BroadcastChannel('parking_sync');
       channel.postMessage('sync_needed');
       channel.close();
-      
-      return true;
     } catch (e) {
       console.error("DB Sync failed:", e);
-      alert("Error: Gagal menyinkronkan data dengan database. Silakan periksa koneksi Anda dan coba lagi.");
-      return false;
     }
-  }, [fetchFullDB]);
+  };
 
   // Polling Real-time data database via Prisma for cross-device sync
   useEffect(() => {
@@ -185,7 +172,7 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
       // Jika mode internet lambat aktif, tunda fetching (simulasi)
       if (isSlowInternet) return;
       try {
-        const res = await fetch(`/api/sync?t=${Date.now()}`, { cache: 'no-store' });
+        const res = await fetch("/api/sync");
         if (!res.ok) throw new Error("Gagal sync data");
         const data = await res.json();
 
@@ -206,8 +193,8 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // Poll DB every 2 seconds for near-real-time updates
-    const intervalId = setInterval(pollFullDB, 2000);
+    // Poll DB every 3 seconds for near-real-time updates
+    const intervalId = setInterval(pollFullDB, 3000);
     return () => clearInterval(intervalId);
   }, [isSlowInternet]);
 
@@ -260,6 +247,24 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
         const newTime = Date.now();
         const checkInTime =
           newTime - Math.floor(Math.random() * 3 * 3600 * 1000);
+        setActiveVehicles((prev) => [
+          ...prev,
+          {
+            ticketId: newTicketId,
+            slotId: randomSlot.id,
+            // Buat agar durasi masuk sudah beberapa jam lalu supaya ada tagihan
+            checkInTime,
+          },
+        ]);
+        setSlots((prev) =>
+          prev.map((s) =>
+            s.id === randomSlot.id ? { ...s, status: "terisi" } : s,
+          ),
+        );
+        setLogs((prev) => [
+          ...prev,
+          { id: newTime.toString(), type: "in", timestamp: newTime },
+        ]);
 
         syncToDB("vehicle_in", {
           ticketId: newTicketId,
@@ -294,12 +299,24 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
           setPaymentSuccess(true); // layar hijau
 
           // Delay hapus data (kendaraan resmi keluar)
-          setTimeout(async () => {
+          setTimeout(() => {
             const exitTime = Date.now();
+            setSlots((prev) =>
+              prev.map((s) =>
+                s.id === vehicle.slotId ? { ...s, status: "kosong" } : s,
+              ),
+            );
+            setActiveVehicles((prev) =>
+              prev.filter((v) => v.ticketId !== vehicle.ticketId),
+            );
             setExitProcessData(null);
             setPaymentSuccess(false);
+            setLogs((prev) => [
+              ...prev,
+              { id: exitTime.toString(), type: "out", timestamp: exitTime },
+            ]);
 
-            await syncToDB("vehicle_out", {
+            syncToDB("vehicle_out", {
               ticketId: vehicle.ticketId,
               slotId: vehicle.slotId,
               logId: exitTime.toString(),
@@ -311,7 +328,7 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
     }, 4500); // Trigger setiap 4.5 detik
 
     return () => clearInterval(demoInterval);
-  }, [config.demo_mode, syncToDB]);
+  }, [config.demo_mode]);
 
   return (
     <ParkingContext.Provider

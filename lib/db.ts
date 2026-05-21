@@ -1,14 +1,17 @@
 import { neon } from "@neondatabase/serverless";
 
-export const sql = process.env.DATABASE_URL 
-  ? neon(process.env.DATABASE_URL) 
+const dbUrl = process.env.DATABASE_URL || "";
+const isValidDbUrl = dbUrl.startsWith("postgres") && !dbUrl.includes("localhost");
+
+export const sql = isValidDbUrl
+  ? neon(dbUrl) 
   : (() => {
       // Return a dummy function for build time when DATABASE_URL is undefined
       return (...args: any[]) => Promise.resolve([] as any);
     })() as any;
 
 export async function setupDatabase() {
-  if (!process.env.DATABASE_URL) return; // Skip if no DB
+  if (!isValidDbUrl) return; // Skip if no DB
 
   await sql`
     CREATE TABLE IF NOT EXISTS config (
@@ -30,6 +33,17 @@ export async function setupDatabase() {
       ticket_id VARCHAR(50) PRIMARY KEY,
       slot_id VARCHAR(10) NOT NULL,
       check_in_time BIGINT NOT NULL
+    );
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS tickets (
+      id_tiket VARCHAR(50) PRIMARY KEY,
+      id_slot VARCHAR(10) NOT NULL,
+      waktu_masuk TIMESTAMP NOT NULL,
+      waktu_keluar TIMESTAMP,
+      total_bayar INTEGER,
+      CONSTRAINT tickets_id_slot_fkey FOREIGN KEY (id_slot) REFERENCES slots(id) ON UPDATE CASCADE ON DELETE RESTRICT
     );
   `;
 

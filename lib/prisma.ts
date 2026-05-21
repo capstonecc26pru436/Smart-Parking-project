@@ -2,27 +2,26 @@ import { PrismaClient } from "@prisma/client";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-// 1. Tangkap URL asli ATAU gunakan dummy secara langsung jika sedang proses build
-const connectionString = process.env.DATABASE_URL || "postgresql://dummy:dummy@localhost:5432/dummy";
+const globalForPrisma = global as unknown as { prisma2: PrismaClient };
 
-const globalForPrisma = global as unknown as { prisma: PrismaClient };
+const dbUrl = process.env.DATABASE_URL || "";
+const isValidDbUrl = dbUrl.startsWith("postgres") && !dbUrl.includes("localhost");
 
 let prismaClient: PrismaClient;
 
-if (globalForPrisma.prisma) {
-  prismaClient = globalForPrisma.prisma;
+if (globalForPrisma.prisma2) {
+  prismaClient = globalForPrisma.prisma2;
 } else {
-  // 2. Selalu gunakan Pool dan Adapter, baik dengan URL asli maupun dummy
-  const pool = new Pool({
-    connectionString,
-    ssl: { rejectUnauthorized: false }
-  });
-  const adapter = new PrismaPg(pool);
-  
-  // 3. Inisialisasi Prisma (Tidak akan crash lagi karena adapter selalu ada)
-  prismaClient = new PrismaClient({ adapter });
+  if (isValidDbUrl) {
+    const pool = new Pool({ connectionString: dbUrl });
+    const adapter = new PrismaPg(pool);
+    prismaClient = new PrismaClient({ adapter });
+  } else {
+    // If no db, just create dummy client that might fail later if used
+    prismaClient = new PrismaClient({ adapter: null as any });
+  }
 }
 
 export const prisma = prismaClient;
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma2 = prisma;

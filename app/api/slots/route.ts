@@ -1,10 +1,16 @@
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
-    let slots = await prisma.slots.findMany();
+    const hasDB = process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith("postgres") && !process.env.DATABASE_URL.includes("localhost");
+    
+    let slots: any[] = [];
+    if (hasDB) {
+      slots = await prisma.slots.findMany();
+    }
 
     // Seed initial slots if empty
     if (slots.length === 0) {
@@ -19,10 +25,15 @@ export async function GET() {
           });
         }
       }
-      await prisma.slots.createMany({
-        data: initialSlots,
-      });
-      slots = await prisma.slots.findMany();
+      
+      if (hasDB) {
+        await prisma.slots.createMany({
+          data: initialSlots,
+        });
+        slots = await prisma.slots.findMany();
+      } else {
+        slots = initialSlots;
+      }
     }
 
     return NextResponse.json({ slots });
