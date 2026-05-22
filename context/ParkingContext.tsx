@@ -252,19 +252,9 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Efek Simulasi Internet Lemot
+  // Simulasi internet lemot dihilangkan agar koneksi selalu real-time
   useEffect(() => {
-    const latensiInterval = setInterval(() => {
-      const isSlow = Math.random() > 0.7; // 30% chance internet lambat
-      setIsSlowInternet(isSlow);
-      if (isSlow) {
-        setLastSyncTime(Date.now() - Math.floor(Math.random() * 5 * 60 * 1000)); // last sync 0-5 mins ago
-      } else {
-        setLastSyncTime(Date.now());
-      }
-    }, 10000); // Check every 10 seconds
-
-    return () => clearInterval(latensiInterval);
+    // Simulasi internet lemot dihilangkan
   }, []);
 
   // Ref untuk menghindari stale closure di dalam setInterval Demo Mode
@@ -295,7 +285,7 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
         // [SIMULASI] Kendaraan Masuk
         const randomSlot =
           availableSlots[Math.floor(Math.random() * availableSlots.length)];
-        const newTicketId = `DEMO-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 1000)
+        const newTicketId = `DEMO-${Math.floor(Math.random() * 1000)
           .toString()
           .padStart(3, "0")}`;
         const newTime = Date.now();
