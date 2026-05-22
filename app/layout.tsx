@@ -3,6 +3,8 @@ import './globals.css'; // Global styles
 import { ParkingProvider } from '@/context/ParkingContext';
 import DemoBanner from '@/components/DemoBanner';
 
+export const runtime = 'edge';
+
 export const metadata: Metadata = {
   title: 'Sistem Manajemen Parkir',
   description: 'Aplikasi pengelolaan slot parkir dengan Global State Management',
