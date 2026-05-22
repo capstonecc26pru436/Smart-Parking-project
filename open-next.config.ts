@@ -12,9 +12,9 @@ const config: OpenNextConfig = {
     },
   },
   functions: {
-    edgeConfig: {
-      routes: ["app/page", "app/admin/page", "app/dashboard/page", "app/exit-display/page"],
-      patterns: ["/", "/admin(/?.*)", "/dashboard(/?.*)", "/exit-display(/?.*)"],
+    admin: {
+      routes: ["app/admin/page"],
+      patterns: ["/admin(/?.*)"],
       override: {
         wrapper: "cloudflare-edge",
         converter: "edge",
