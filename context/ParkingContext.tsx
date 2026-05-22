@@ -295,7 +295,7 @@ export function ParkingProvider({ children }: { children: ReactNode }) {
         // [SIMULASI] Kendaraan Masuk
         const randomSlot =
           availableSlots[Math.floor(Math.random() * availableSlots.length)];
-        const newTicketId = `DEMO-${Math.floor(Math.random() * 1000)
+        const newTicketId = `DEMO-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 1000)
           .toString()
           .padStart(3, "0")}`;
         const newTime = Date.now();
